@@ -1,43 +1,50 @@
 .tinyurl-app {
-    max-width: 600px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
     font-family: Arial, sans-serif;
-    }
+}
 
-    .title {
-    font-size: 2rem;
+.title {
+    font-size: 2.5rem;
     font-weight: bold;
     text-align: center;
     margin-bottom: 20px;
     color: #333;
-    }
+}
 
-    .section {
-    margin-bottom: 30px;
-    padding: 15px;
+.sections-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.section {
+    padding: 20px;
     border: 1px solid #ddd;
     border-radius: 8px;
     background-color: #f9f9f9;
-    }
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
 
-    .section-title {
+.section-title {
     font-size: 1.5rem;
     font-weight: bold;
     margin-bottom: 15px;
     color: #444;
-    }
+}
 
-    .input {
-    width: 100%;
+.input {
     padding: 10px;
-    margin-bottom: 10px;
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 1rem;
-    }
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+}
 
-    .button {
+.button {
     padding: 10px 20px;
     border: none;
     border-radius: 4px;
@@ -45,61 +52,71 @@
     font-size: 1rem;
     cursor: pointer;
     transition: background-color 0.3s;
-    }
+}
 
-    .create-user {
+.create-user {
     background-color: #007bff;
-    }
+}
 
-    .create-user:hover {
+.create-user:hover {
     background-color: #0056b3;
-    }
+}
 
-    .create-tiny {
+.create-tiny {
     background-color: #28a745;
-    }
+}
 
-    .create-tiny:hover {
+.create-tiny:hover {
     background-color: #218838;
-    }
+}
 
-    .get-info {
+.get-info {
     background-color: #ffc107;
     color: #333;
-    }
+}
 
-    .get-info:hover {
+.get-info:hover {
     background-color: #e0a800;
-    }
+}
 
-    .get-clicks {
+.get-clicks {
     background-color: #6f42c1;
-    }
+}
 
-    .get-clicks:hover {
+.get-clicks:hover {
     background-color: #5a32a3;
-    }
+}
 
-    .result {
+.result {
     margin-top: 10px;
     font-size: 1rem;
     color: #333;
-    }
+}
 
-    .clicks-list {
+.clicks-list {
     margin-top: 10px;
     list-style-type: none;
     padding: 0;
-    }
+}
 
-    .clicks-list li {
+.clicks-list li {
     padding: 5px 0;
     border-bottom: 1px solid #eee;
-    }
+}
 
-    .message {
-    margin-top: 20px;
-    font-size: 1rem;
-    color: #dc3545;
-    text-align: center;
+.success-message {
+    color: black;
+    margin-top: 5px;
+}
+
+.error-message {
+    color: red;
+    margin-top: 5px;
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    .sections-container {
+        grid-template-columns: 1fr;
+    }
 }
