@@ -45,8 +45,8 @@ const TinyUrlApp: React.FC = () => {
             return;
         }
         try {
-            const response = await axios.post(`${globals.api.user}?name=${username}`);
-            setCreateUserMessage('User created successfully: ' + response.data);
+            await axios.post(`${globals.api.user}?name=${username}`);
+            setCreateUserMessage('User created successfully');
         } catch (error: any) {
             setCreateUserMessage(error.response?.data || 'Error creating user');
             console.error(error);
@@ -65,7 +65,14 @@ const TinyUrlApp: React.FC = () => {
                 { longUrl, userName: username },
                 { headers: { 'Content-Type': 'application/json' } }
             );
-            setTinyUrl(response.data);
+            console.log('Tiny URL response:', response.data);
+            let cleanTinyUrl = response.data.endsWith('/') ? response.data : `${response.data}/`;
+            if (cleanTinyUrl.includes(longUrl)) {
+                console.warn('Unexpected longUrl in response:', cleanTinyUrl);
+                cleanTinyUrl = cleanTinyUrl.split(longUrl)[0];
+            }
+            console.log('Setting tinyUrl:', cleanTinyUrl);
+            setTinyUrl(cleanTinyUrl);
             setCreateTinyMessage('');
             setLongUrl('');
         } catch (error: any) {
@@ -159,7 +166,20 @@ const TinyUrlApp: React.FC = () => {
                     {tinyUrl && (
                         <p className="result">
                             Your Tiny URL:{' '}
-                            <a href={tinyUrl} target="_blank" rel="noopener noreferrer">
+                            <a
+                                href={tinyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer nofollow"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    let cleanUrl = tinyUrl.endsWith('/') ? tinyUrl : `${tinyUrl}/`;
+                                    if (cleanUrl.includes(longUrl)) {
+                                        cleanUrl = cleanUrl.split(longUrl)[0];
+                                    }
+                                    console.log('Opening URL:', cleanUrl);
+                                    window.open(cleanUrl, '_blank', 'noopener,noreferrer');
+                                }}
+                            >
                                 {tinyUrl}
                             </a>
                         </p>
@@ -180,10 +200,10 @@ const TinyUrlApp: React.FC = () => {
                     {userInfoMessage && <p className="error-message">{userInfoMessage}</p>}
                     {userInfo && (
                         <div className="result">
-                            <p>Name: {userInfo.name}</p>
-                            <p>Total Clicks: {userInfo.allUrlClicks}</p>
-                            <p>Short URLs:</p>
-                            <ul>
+                            <p className="user-info-name">Name: {userInfo.name}</p>
+                            <p className="user-info-clicks">Total Clicks: {userInfo.allUrlClicks}</p>
+                            <p className="short-urls">Short URLs:</p>
+                            <ul className="short-url-details">
                                 {Object.entries(userInfo.shorts).map(([key, value]) => (
                                     <li key={key}>
                                         {key}:

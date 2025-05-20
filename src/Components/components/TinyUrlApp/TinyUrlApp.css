@@ -93,6 +93,23 @@
     color: #333;
 }
 
+.user-info-name, .user-info-clicks {
+    font-weight: bold;
+    font-size: 1.4rem;
+    color: #333;
+}
+
+.short-urls {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #555;
+}
+
+.short-url-details {
+    font-size: 0.9rem;
+    color: #666;
+}
+
 .clicks-list {
     margin-top: 10px;
     list-style-type: none;
