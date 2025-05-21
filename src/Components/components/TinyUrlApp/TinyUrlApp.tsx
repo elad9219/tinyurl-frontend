@@ -12,7 +12,7 @@ interface ShortUrl {
 interface UserInfo {
     name: string;
     allUrlClicks: number;
-    shorts: { [key: string]: ShortUrl };
+    shorts: { [key: string]: ShortUrl } | null;
 }
 
 const TinyUrlApp: React.FC = () => {
@@ -49,7 +49,7 @@ const TinyUrlApp: React.FC = () => {
             setCreateUserMessage('User created successfully');
         } catch (error: any) {
             setCreateUserMessage(error.response?.data || 'Error creating user');
-            console.error(error);
+            console.error('Expected error when creating user:', error.response?.data);
         }
     };
 
@@ -65,13 +65,7 @@ const TinyUrlApp: React.FC = () => {
                 { longUrl, userName: username },
                 { headers: { 'Content-Type': 'application/json' } }
             );
-            console.log('Tiny URL response:', response.data);
-            let cleanTinyUrl = response.data.endsWith('/') ? response.data : `${response.data}/`;
-            if (cleanTinyUrl.includes(longUrl)) {
-                console.warn('Unexpected longUrl in response:', cleanTinyUrl);
-                cleanTinyUrl = cleanTinyUrl.split(longUrl)[0];
-            }
-            console.log('Setting tinyUrl:', cleanTinyUrl);
+            const cleanTinyUrl = response.data.endsWith('/') ? response.data : `${response.data}/`;
             setTinyUrl(cleanTinyUrl);
             setCreateTinyMessage('');
             setLongUrl('');
@@ -109,14 +103,14 @@ const TinyUrlApp: React.FC = () => {
         }
         try {
             const response = await axios.get(globals.api.userClicks(username));
-            if (response.data.length > 0) {
-                setClicks(response.data);
+            if (response.data.data) {
+                setClicks(response.data.data);
                 setClicksMessage('');
             } else {
-                setClicksMessage('No clicks found for this user');
+                setClicksMessage(response.data.message || 'No clicks found for this user');
             }
         } catch (error: any) {
-            setClicksMessage(error.response?.data || 'Error fetching clicks');
+            setClicksMessage(error.response?.data?.message || 'Error fetching clicks');
             console.error(error);
         }
     };
@@ -156,7 +150,7 @@ const TinyUrlApp: React.FC = () => {
                         type="text"
                         value={longUrl}
                         onChange={(e) => setLongUrl(e.target.value)}
-                        placeholder="Enter URL (e.g., one.co.il)"
+                        placeholder="Enter URL (e.g., https://www.one.co.il)"
                         className="input"
                     />
                     <button onClick={handleCreateTinyUrl} className="button create-tiny">
@@ -172,11 +166,7 @@ const TinyUrlApp: React.FC = () => {
                                 rel="noopener noreferrer nofollow"
                                 onClick={(e) => {
                                     e.preventDefault();
-                                    let cleanUrl = tinyUrl.endsWith('/') ? tinyUrl : `${tinyUrl}/`;
-                                    if (cleanUrl.includes(longUrl)) {
-                                        cleanUrl = cleanUrl.split(longUrl)[0];
-                                    }
-                                    console.log('Opening URL:', cleanUrl);
+                                    const cleanUrl = tinyUrl.endsWith('/') ? tinyUrl : `${tinyUrl}/`;
                                     window.open(cleanUrl, '_blank', 'noopener,noreferrer');
                                 }}
                             >
@@ -203,18 +193,22 @@ const TinyUrlApp: React.FC = () => {
                             <p className="user-info-name">Name: {userInfo.name}</p>
                             <p className="user-info-clicks">Total Clicks: {userInfo.allUrlClicks}</p>
                             <p className="short-urls">Short URLs:</p>
-                            <ul className="short-url-details">
-                                {Object.entries(userInfo.shorts).map(([key, value]) => (
-                                    <li key={key}>
-                                        {key}:
-                                        <ul>
-                                            {Object.entries(value.clicks).map(([date, clicks]) => (
-                                                <li key={date}>{date}: {clicks} clicks</li>
-                                            ))}
-                                        </ul>
-                                    </li>
-                                ))}
-                            </ul>
+                            {userInfo.shorts && Object.keys(userInfo.shorts).length > 0 ? (
+                                <ul className="short-url-details">
+                                    {Object.entries(userInfo.shorts).map(([key, value]) => (
+                                        <li key={key}>
+                                            {key}:
+                                            <ul>
+                                                {Object.entries(value.clicks).map(([date, clicks]) => (
+                                                    <li key={date}>{date}: {clicks} clicks</li>
+                                                ))}
+                                            </ul>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="error-message">No short URLs created yet</p>
+                            )}
                         </div>
                     )}
                 </div>
