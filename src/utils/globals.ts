@@ -23,10 +23,10 @@ export class ProductionGlobals extends Globals {
     constructor() {
         super();
         this.api = {
-            user: '/user',
-            tiny: '/tiny',
-            userInfo: (username: string) => `/user/${username}`,
-            userClicks: (username: string) => `/user/${username}/clicks`,
+            user: 'https://shorturl.runmydocker-app.com/user',
+            tiny: 'https://shorturl.runmydocker-app.com/tiny',
+            userInfo: (username: string) => `https://shorturl.runmydocker-app.com/user/${username}`,
+            userClicks: (username: string) => `https://shorturl.runmydocker-app.com/user/${username}/clicks`,
         };
     }
 }

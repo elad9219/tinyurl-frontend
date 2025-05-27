@@ -25,6 +25,7 @@ const TinyUrlApp: React.FC = () => {
     const [createTinyMessage, setCreateTinyMessage] = useState('');
     const [userInfoMessage, setUserInfoMessage] = useState('');
     const [clicksMessage, setClicksMessage] = useState('');
+    const [isCreatingUser, setIsCreatingUser] = useState(false); // Prevent duplicate requests
 
     // Format date to DD/MM/YYYY at HH:MM:SS
     const formatDate = (date: string) => {
@@ -44,12 +45,17 @@ const TinyUrlApp: React.FC = () => {
             setCreateUserMessage('Please enter a username');
             return;
         }
+        if (isCreatingUser) return; // Prevent duplicate requests
+        setIsCreatingUser(true);
         try {
-            await axios.post(`${globals.api.user}?name=${username}`);
-            setCreateUserMessage('User created successfully');
+            const response = await axios.post(`${globals.api.user}?name=${username}`);
+            setCreateUserMessage(response.data); // Expect "User created successfully"
         } catch (error: any) {
-            setCreateUserMessage(error.response?.data || 'Error creating user');
-            console.error('Expected error when creating user:', error.response?.data);
+            const message = error.response?.data || 'Error creating user';
+            setCreateUserMessage(message);
+            console.error('Error creating user:', message);
+        } finally {
+            setIsCreatingUser(false);
         }
     };
 
@@ -103,15 +109,18 @@ const TinyUrlApp: React.FC = () => {
         }
         try {
             const response = await axios.get(globals.api.userClicks(username));
-            if (response.data.data) {
-                setClicks(response.data.data);
+            console.log('Clicks response:', response.data); // Debug log
+            if (Array.isArray(response.data) && response.data.length > 0) {
+                setClicks(response.data);
                 setClicksMessage('');
             } else {
-                setClicksMessage(response.data.message || 'No clicks found for this user');
+                setClicks([]);
+                setClicksMessage('No clicks found for this user');
             }
         } catch (error: any) {
+            console.error('Error fetching clicks:', error);
+            setClicks([]);
             setClicksMessage(error.response?.data?.message || 'Error fetching clicks');
-            console.error(error);
         }
     };
 
@@ -128,8 +137,12 @@ const TinyUrlApp: React.FC = () => {
                         placeholder="Username"
                         className="input"
                     />
-                    <button onClick={handleCreateUser} className="button create-user">
-                        Create User
+                    <button
+                        onClick={handleCreateUser}
+                        className="button create-user"
+                        disabled={isCreatingUser} // Disable button during request
+                    >
+                        {isCreatingUser ? 'Creating...' : 'Create User'}
                     </button>
                     {createUserMessage && (
                         <p className={createUserMessage.includes('successfully') ? 'success-message' : 'error-message'}>
