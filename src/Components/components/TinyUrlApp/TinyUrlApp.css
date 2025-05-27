@@ -7,8 +7,8 @@ html, body {
 .tinyurl-app {
     max-width: 1200px;
     margin: 0 auto;
-    margin-top: 0; /* Explicitly set to ensure no top margin */
-    padding: 0 20px 20px; /* No padding-top to stick header to top */
+    margin-top: 0; 
+    padding: 0 20px 20px; 
     font-family: Arial, sans-serif;
 }
 
@@ -16,15 +16,15 @@ html, body {
     font-size: 3.0rem;
     font-weight: bold;
     text-align: center;
-    margin: 0 0 20px 0; /* Add bottom margin for spacing below */
-    color: #fff; /* White text for better contrast */
+    margin: 0 0 20px 0; 
+    color: #fff; 
     padding: 60px;
     background-image: url('https://cdn.pixabay.com/photo/2014/09/20/23/44/website-454460_1280.jpg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
     border-radius: 8px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); /* Shadow for readability */
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .sections-container {
