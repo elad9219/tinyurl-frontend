@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import './TinyUrlApp.css';
 import globals from '../../../utils/globals';
+import { parse, format } from 'date-fns';
 
 // Define the structure of ShortUrl
 interface ShortUrl {
@@ -27,17 +28,15 @@ const TinyUrlApp: React.FC = () => {
     const [clicksMessage, setClicksMessage] = useState('');
     const [isCreatingUser, setIsCreatingUser] = useState(false); // Prevent duplicate requests
 
-    // Format date to DD/MM/YYYY at HH:MM:SS
-    const formatDate = (date: string) => {
-        const d = new Date(date);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        const hours = String(d.getHours()).padStart(2, '0');
-        const minutes = String(d.getMinutes()).padStart(2, '0');
-        const seconds = String(d.getSeconds()).padStart(2, '0');
-        return `${day}/${month}/${year} at ${hours}:${minutes}:${seconds}`;
-    };
+const formatDate = (dateStr: string) => {
+    try {
+        const parsedDate = parse(dateStr, 'yyyy-MM-dd HH:mm:ss', new Date());
+        return format(parsedDate, 'dd/MM/yyyy \'at\' HH:mm:ss');
+    } catch (error) {
+        console.error('Error parsing date:', dateStr, error);
+        return 'Invalid date';
+    }
+};
 
     // Handle user creation
     const handleCreateUser = async () => {
