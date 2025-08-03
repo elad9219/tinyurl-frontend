@@ -3,8 +3,8 @@
 TinyURL is a full-stack web application that allows users to shorten long URLs, track clicks, and manage user-specific short URLs. Built as a course project, it demonstrates a modern microservices architecture with a Spring Boot backend, React frontend, and multiple databases (MongoDB, Redis, Cassandra). The application is deployed on Render and accessible at [https://shorturl.runmydocker-app.com/](https://shorturl.runmydocker-app.com/).
 
 ## Quick Links
-- **Live Demo**: [https://shorturl.runmydocker-app.com/](https://shorturl.runmydocker-app.com/)
-- **API Documentation (Swagger)**: [https://shorturl.runmydocker-app.com/swagger-ui.html](https://shorturl.runmydocker-app.com/swagger-ui.html)
+- **Live Demo**: [https://surl.runmydocker-app.com/](https://surl.runmydocker-app.com/)
+- **API Documentation (Swagger)**: [https://surl.runmydocker-app.com/swagger-ui.html](https://surl.runmydocker-app.com/swagger-ui.html)
 - **Backend Repository**: [https://github.com/elad9219/tinyurl](https://github.com/elad9219/tinyurl)
 - **Frontend Repository**: [https://github.com/elad9219/tinyurl-frontend](https://github.com/elad9219/tinyurl-frontend)
 
