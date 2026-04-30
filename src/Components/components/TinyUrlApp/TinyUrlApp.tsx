@@ -139,7 +139,7 @@ const TinyUrlApp: React.FC = () => {
             
             {isWakingUp && (
                 <div className="waking-up-msg">
-                    ⏳ The free server is waking up (this may take ~30 seconds), please wait...
+                    ⏳ Initializing free server tier. The backend needs about 10 seconds to wake up for the first search. After that, everything will be instant!
                 </div>
             )}
 
