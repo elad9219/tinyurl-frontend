@@ -1,15 +1,13 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
+import axiosInstance from '../../../utils/axiosInstance'; // Using the custom interceptor
 import './TinyUrlApp.css';
 import globals from '../../../utils/globals';
 import { parse, format } from 'date-fns';
 
-// Define the structure of ShortUrl
 interface ShortUrl {
     clicks: { [key: string]: number };
 }
 
-// Define the structure of UserInfo
 interface UserInfo {
     name: string;
     allUrlClicks: number;
@@ -26,46 +24,61 @@ const TinyUrlApp: React.FC = () => {
     const [createTinyMessage, setCreateTinyMessage] = useState('');
     const [userInfoMessage, setUserInfoMessage] = useState('');
     const [clicksMessage, setClicksMessage] = useState('');
-    const [isCreatingUser, setIsCreatingUser] = useState(false); // Prevent duplicate requests
+    const [isCreatingUser, setIsCreatingUser] = useState(false);
+    
+    // Cold start state
+    const [isWakingUp, setIsWakingUp] = useState(false);
 
-const formatDate = (dateStr: string) => {
-    try {
-        const parsedDate = parse(dateStr, 'yyyy-MM-dd HH:mm:ss', new Date());
-        return format(parsedDate, 'dd/MM/yyyy \'at\' HH:mm:ss');
-    } catch (error) {
-        console.error('Error parsing date:', dateStr, error);
-        return 'Invalid date';
-    }
-};
+    // Listeners for cold start events
+    useEffect(() => {
+        const handleWakeUp = () => setIsWakingUp(true);
+        const handleAwake = () => setIsWakingUp(false);
 
-    // Handle user creation
+        window.addEventListener('serverWakingUp', handleWakeUp);
+        window.addEventListener('serverAwake', handleAwake);
+
+        return () => {
+            window.removeEventListener('serverWakingUp', handleWakeUp);
+            window.removeEventListener('serverAwake', handleAwake);
+        };
+    }, []);
+
+    const formatDate = (dateStr: string) => {
+        try {
+            const parsedDate = parse(dateStr, 'yyyy-MM-dd HH:mm:ss', new Date());
+            return format(parsedDate, 'dd/MM/yyyy \'at\' HH:mm:ss');
+        } catch (error) {
+            console.error('Error parsing date:', dateStr, error);
+            return 'Invalid date';
+        }
+    };
+
     const handleCreateUser = async () => {
         if (!username) {
             setCreateUserMessage('Please enter a username');
             return;
         }
-        if (isCreatingUser) return; // Prevent duplicate requests
+        if (isCreatingUser) return;
         setIsCreatingUser(true);
         try {
-            const response = await axios.post(`${globals.api.user}?name=${username}`);
-            setCreateUserMessage(response.data); // Expect "User created successfully"
+            const response = await axiosInstance.post(`${globals.api.user}?name=${username}`);
+            setCreateUserMessage(response.data);
         } catch (error: any) {
+            setIsWakingUp(false);
             const message = error.response?.data || 'Error creating user';
             setCreateUserMessage(message);
-            console.error('Error creating user:', message);
         } finally {
             setIsCreatingUser(false);
         }
     };
 
-    // Handle tiny URL creation
     const handleCreateTinyUrl = async () => {
         if (!username || !longUrl) {
             setCreateTinyMessage('Please fill all fields');
             return;
         }
         try {
-            const response = await axios.post(
+            const response = await axiosInstance.post(
                 globals.api.tiny,
                 { longUrl, userName: username },
                 { headers: { 'Content-Type': 'application/json' } }
@@ -75,19 +88,18 @@ const formatDate = (dateStr: string) => {
             setCreateTinyMessage('');
             setLongUrl('');
         } catch (error: any) {
+            setIsWakingUp(false);
             setCreateTinyMessage(error.response?.data || 'Error creating tiny URL');
-            console.error(error);
         }
     };
 
-    // Handle getting user information
     const handleGetUserInfo = async () => {
         if (!username) {
             setUserInfoMessage('Please enter a username');
             return;
         }
         try {
-            const response = await axios.get(globals.api.userInfo(username));
+            const response = await axiosInstance.get(globals.api.userInfo(username));
             if (response.data) {
                 setUserInfo(response.data);
                 setUserInfoMessage('');
@@ -95,20 +107,18 @@ const formatDate = (dateStr: string) => {
                 setUserInfoMessage('User not found');
             }
         } catch (error: any) {
+            setIsWakingUp(false);
             setUserInfoMessage(error.response?.data || 'Error fetching user info');
-            console.error(error);
         }
     };
 
-    // Handle getting click details
     const handleGetClicks = async () => {
         if (!username) {
             setClicksMessage('Please enter a username');
             return;
         }
         try {
-            const response = await axios.get(globals.api.userClicks(username));
-            console.log('Clicks response:', response.data); // Debug log
+            const response = await axiosInstance.get(globals.api.userClicks(username));
             if (Array.isArray(response.data) && response.data.length > 0) {
                 setClicks(response.data);
                 setClicksMessage('');
@@ -117,7 +127,7 @@ const formatDate = (dateStr: string) => {
                 setClicksMessage('No clicks found for this user');
             }
         } catch (error: any) {
-            console.error('Error fetching clicks:', error);
+            setIsWakingUp(false);
             setClicks([]);
             setClicksMessage(error.response?.data?.message || 'Error fetching clicks');
         }
@@ -126,6 +136,13 @@ const formatDate = (dateStr: string) => {
     return (
         <div className="tinyurl-app">
             <h1 className="title">TinyURL - Shorten Your Links</h1>
+            
+            {isWakingUp && (
+                <div className="waking-up-msg">
+                    ⏳ The free server is waking up (this may take ~30 seconds), please wait...
+                </div>
+            )}
+
             <div className="sections-container">
                 <div className="section">
                     <h2 className="section-title">Create New User</h2>
@@ -135,11 +152,12 @@ const formatDate = (dateStr: string) => {
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="Username"
                         className="input"
+                        disabled={isWakingUp}
                     />
                     <button
                         onClick={handleCreateUser}
                         className="button create-user"
-                        disabled={isCreatingUser} // Disable button during request
+                        disabled={isCreatingUser || isWakingUp}
                     >
                         {isCreatingUser ? 'Creating...' : 'Create User'}
                     </button>
@@ -157,6 +175,7 @@ const formatDate = (dateStr: string) => {
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="Username"
                         className="input"
+                        disabled={isWakingUp}
                     />
                     <input
                         type="text"
@@ -164,8 +183,9 @@ const formatDate = (dateStr: string) => {
                         onChange={(e) => setLongUrl(e.target.value)}
                         placeholder="Enter URL (e.g., https://www.one.co.il)"
                         className="input"
+                        disabled={isWakingUp}
                     />
-                    <button onClick={handleCreateTinyUrl} className="button create-tiny">
+                    <button onClick={handleCreateTinyUrl} className="button create-tiny" disabled={isWakingUp}>
                         Create Tiny URL
                     </button>
                     {createTinyMessage && <p className="error-message">{createTinyMessage}</p>}
@@ -195,8 +215,9 @@ const formatDate = (dateStr: string) => {
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="Username"
                         className="input"
+                        disabled={isWakingUp}
                     />
-                    <button onClick={handleGetUserInfo} className="button get-info">
+                    <button onClick={handleGetUserInfo} className="button get-info" disabled={isWakingUp}>
                         Get Info
                     </button>
                     {userInfoMessage && <p className="error-message">{userInfoMessage}</p>}
@@ -232,8 +253,9 @@ const formatDate = (dateStr: string) => {
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="Username"
                         className="input"
+                        disabled={isWakingUp}
                     />
-                    <button onClick={handleGetClicks} className="button get-clicks">
+                    <button onClick={handleGetClicks} className="button get-clicks" disabled={isWakingUp}>
                         Get Clicks
                     </button>
                     {clicksMessage && <p className="error-message">{clicksMessage}</p>}

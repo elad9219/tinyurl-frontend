@@ -8,13 +8,16 @@ class Globals {
 }
 
 export class DevelopmentGlobals extends Globals {
+    // Dynamically get the host to support localhost and local network IP testing
+    private static host = window.location.hostname;
+    
     constructor() {
         super();
         this.api = {
-            user: 'http://localhost:8080/user',
-            tiny: 'http://localhost:8080/tiny',
-            userInfo: (username: string) => `http://localhost:8080/user/${username}`,
-            userClicks: (username: string) => `http://localhost:8080/user/${username}/clicks`,
+            user: `http://${DevelopmentGlobals.host}:8080/user`,
+            tiny: `http://${DevelopmentGlobals.host}:8080/tiny`,
+            userInfo: (username: string) => `http://${DevelopmentGlobals.host}:8080/user/${username}`,
+            userClicks: (username: string) => `http://${DevelopmentGlobals.host}:8080/user/${username}/clicks`,
         };
     }
 }
