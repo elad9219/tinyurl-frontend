@@ -1,235 +1,144 @@
-# TinyURL - URL Shortening Service
+# TinyURL — URL Shortening & Click Analytics Service
 
-TinyURL is a full-stack web application that allows users to shorten long URLs, track clicks, and manage user-specific short URLs. Built as a course project, it demonstrates a modern microservices architecture with a Spring Boot backend, React frontend, and multiple databases (MongoDB, Redis, Cassandra). The application is deployed on Render and accessible at [https://shorturl.runmydocker-app.com/](https://shorturl.runmydocker-app.com/).
+A full-stack URL shortening application built with Spring Boot and React. The project separates storage responsibilities across Redis, MongoDB, and Cassandra to support fast redirects, user/URL metadata, and click-history analytics.
 
 ## Quick Links
-- **Live Demo**: [https://etinyurl.vercel.app/](https://etinyurl.vercel.app/)
-- **API Documentation (Swagger)**: [https://surl.runmydocker-app.com/swagger-ui.html](https://surl.runmydocker-app.com/swagger-ui.html)
-- **Backend Repository**: [https://github.com/elad9219/tinyurl](https://github.com/elad9219/tinyurl)
-- **Frontend Repository**: [https://github.com/elad9219/tinyurl-frontend](https://github.com/elad9219/tinyurl-frontend)
 
-## Table of Contents
-- [Features](#features)
-- [Technologies](#technologies)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Screenshots](#screenshots)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
+- **Live Demo:** [etinyurl.vercel.app](https://etinyurl.vercel.app/)
+- **API Documentation (Swagger):** [surl.runmydocker-app.com/swagger-ui.html](https://surl.runmydocker-app.com/swagger-ui.html)
+- **Backend Repository:** [github.com/elad9219/tinyurl](https://github.com/elad9219/tinyurl)
+- **Frontend Repository:** [github.com/elad9219/tinyurl-frontend](https://github.com/elad9219/tinyurl-frontend)
 
-## Features
-- **Create New User**: Register a new user to manage short URLs.
-- **Create Tiny URL**: Shorten long URLs into compact links (e.g., `https://shorturl.runmydocker-app.com/OXeqgq/`).
-- **User Information**: View user details, including total clicks and short URLs with monthly click counts.
-- **Click Details**: Track click history for each short URL, including timestamps and original URLs.
-- **URL Normalization**: Automatically formats URLs with `https://` and optional `www.` for consistency.
-- **Responsive Design**: User-friendly React interface for desktop and mobile.
-- **Database Integration**: Uses MongoDB for user data, Redis for URL mappings, and Cassandra for click tracking.
-- **Dockerized Deployment**: Packaged as a Docker image (`elad9219/tinyurl:005`) and deployed on Render.
-- **CORS Support**: Securely handles cross-origin requests for the frontend.
+## Highlights
+
+- **URL shortening:** Creates compact URLs and redirects visitors to the original destination.
+- **Fast URL resolution:** Uses Redis for short-code-to-URL lookup.
+- **User and URL metadata:** Stores user data and URL metadata in MongoDB.
+- **Click analytics:** Stores click history in Cassandra and exposes per-user and per-URL statistics.
+- **URL normalization:** Normalizes submitted URLs for consistent storage and redirection.
+- **Responsive frontend:** React interface for creating users, shortening URLs, and viewing analytics.
+- **Dockerized backend:** Supports containerized deployment.
+
+## Storage Design
+
+| Store | Responsibility |
+| --- | --- |
+| Redis | Fast URL lookup / redirect mapping |
+| MongoDB | User data and short-URL metadata |
+| Cassandra | Click-history and analytics data |
 
 ## Technologies
-- **Backend**: Spring Boot, Java 11, Maven
-- **Frontend**: React, TypeScript, Node.js 14+, npm
-- **Databases**:
-  - MongoDB: User data and short URL metadata
-  - Redis: Fast key-value storage for URL mappings
-  - Cassandra: Click tracking for analytics
-- **Containerization**: Docker
-- **Deployment**: Render
-- **Version Control**: Git, GitHub
-- **Other**: SLF4J (logging), Jackson (JSON processing)
 
-## Installation
-Follow these steps to set up the project locally.
-
-### Prerequisites
-- Java 11
-- Node.js 14+
-- Docker
-- MongoDB, Redis, and Cassandra instances (or use provided remote instances)
-- Git
-
-### Backend Setup
-1. Clone the backend repository:
-   ```bash
-   git clone https://github.com/elad9219/tinyurl.git
-   cd tinyurl
-   ```
-2. Configure environment variables in `src/main/resources/application.properties`:
-   ```properties
-   spring.data.mongodb.uri=mongodb://admin:admin@node128.codingbc.com:27000/admin?authSource=admin
-   spring.redis.host=node128.codingbc.com
-   spring.redis.port=6380
-   spring.redis.password=admin
-   cassandra.contact-points=node128.codingbc.com
-   cassandra.port=9043
-   cassandra.username=admin
-   cassandra.password=admin
-   base.url=https://shorturl.runmydocker-app.com/
-   ```
-3. Build the project:
-   ```bash
-   mvn clean install
-   ```
-4. Run the backend:
-   ```bash
-   mvn spring-boot:run
-   ```
-
-### Frontend Setup
-1. Clone the frontend repository:
-   ```bash
-   git clone https://github.com/elad9219/tinyurl-frontend.git
-   cd tinyurl-frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Build the frontend:
-   ```bash
-   npm run build
-   ```
-4. Copy the build to the backend's static resources:
-   ```bash
-   cp -r build/* /path/to/tinyurl/src/main/resources/static/
-   ```
-
-### Docker Setup
-1. Build the Docker image:
-   ```bash
-   cd /path/to/tinyurl
-   docker build --platform linux/amd64 -t elad9219/tinyurl:005 .
-   ```
-2. Run the container:
-   ```bash
-   docker run --platform linux/amd64 -p 8080:8080 \
-     -e SPRING_DATA_MONGODB_URI=mongodb://admin:admin@node128.codingbc.com:27000/admin?authSource=admin \
-     -e SPRING_REDIS_HOST=node128.codingbc.com \
-     -e SPRING_REDIS_PORT=6380 \
-     -e SPRING_REDIS_PASSWORD=admin \
-     -e CASSANDRA_CONTACT_POINTS=node128.codingbc.com \
-     -e CASSANDRA_PORT=9043 \
-     -e CASSANDRA_USERNAME=admin \
-     -e CASSANDRA_PASSWORD=admin \
-     elad9219/tinyurl:005
-   ```
-3. Access the app at `http://localhost:8080`.
-
-## Usage
-1. **Create a User**:
-   - Enter a username (e.g., `dsfdsf`) and click "Create User".
-   - Success message: "User created successfully".
-2. **Create a Tiny URL**:
-   - Enter a username and a long URL (e.g., `https://www.one.co.il`).
-   - Receive a short URL (e.g., `https://shorturl.runmydocker-app.com/OXeqgq/`).
-3. **View User Information**:
-   - Enter a username to see total clicks and short URLs with click counts.
-4. **View Click Details**:
-   - Enter a username to see a list of clicks with timestamps and original URLs.
-5. **Click a Short URL**:
-   - Visit the short URL (e.g., `https://shorturl.runmydocker-app.com/OXeqgq/`) to redirect to the original URL.
-
-### Example
-```plaintext
-Create User: dsfdsf
-Create Tiny URL: dsfdsf, https://www.one.co.il
-Result: https://shorturl.runmydocker-app.com/OXeqgq/
-User Info: Name: dsfdsf, Total Clicks: 2, Short URLs: OXeqgq (1 click), HLwF1E (1 click)
-Click Details: 27/05/2025 17:34:56 - https://www.ynet.co.il/ (OXeqgq)
-```
+- **Backend:** Java 11, Spring Boot, Maven
+- **Frontend:** React, TypeScript, Node.js, npm
+- **Databases:** MongoDB, Redis, Cassandra
+- **Containerization:** Docker
+- **Deployment:** Render / Vercel
+- **Other:** Jackson, SLF4J, Git, GitHub
 
 ## Screenshots
-Add screenshots to showcase the app's interface. Place images in a `screenshots/` folder and update the links below:
 
-- **Homepage**:
+### Homepage
 
-   ![image](https://github.com/user-attachments/assets/c916cdad-9119-4bf8-a83a-d61f7d8281b1)
+![TinyURL homepage](https://github.com/user-attachments/assets/c916cdad-9119-4bf8-a83a-d61f7d8281b1)
 
-- **Create User**:
+### Create User
 
-  ![image](https://github.com/user-attachments/assets/67949b52-39d6-48d0-b4da-74335b70bd20)
+![Create user](https://github.com/user-attachments/assets/67949b52-39d6-48d0-b4da-74335b70bd20)
 
-- **Create Tiny URL**:
+### Create Tiny URL
 
-   ![image](https://github.com/user-attachments/assets/2a9b3d41-79b9-4d93-a670-6cd3681eceb3)
+![Create tiny URL](https://github.com/user-attachments/assets/2a9b3d41-79b9-4d93-a670-6cd3681eceb3)
 
-- **User Information**:
+### User Information
 
-   ![image](https://github.com/user-attachments/assets/d56d8e5e-863f-42fd-89b4-38e5f152a494)
+![User information](https://github.com/user-attachments/assets/d56d8e5e-863f-42fd-89b4-38e5f152a494)
 
-- **Click Details**:
+### Click Details
 
-    ![image](https://github.com/user-attachments/assets/808bbdae-e858-4eeb-b320-75d86866bfd8)
+![Click details](https://github.com/user-attachments/assets/808bbdae-e858-4eeb-b320-75d86866bfd8)
 
+## Usage
 
-**Instructions**:
-1. Take screenshots of the app (e.g., homepage, create user form, tiny URL result, user info, click details).
-2. Create a `screenshots/` folder in the repository:
-   ```bash
-   mkdir screenshots
-   ```
-3. Save images as `homepage.png`, `create-user.png`, etc.
-4. Commit and push:
-   ```bash
-   git add screenshots/
-   git commit -m "Add screenshots for README"
-   git push origin main
-   ```
+1. Create a user.
+2. Submit a long URL to generate a shortened URL.
+3. Open the shortened URL to be redirected to the original destination.
+4. View user-level URL and click statistics.
+5. Inspect click history for individual shortened URLs.
+
+## Local Setup
+
+### Prerequisites
+
+- Java 11
+- Maven
+- Node.js and npm
+- MongoDB
+- Redis
+- Cassandra
+- Docker (optional)
+- Git
+
+### Backend
+
+```bash
+git clone https://github.com/elad9219/tinyurl.git
+cd tinyurl
+```
+
+Create your local configuration from `src/main/resources/application.properties.example`, then replace the placeholders with your own MongoDB, Redis, and Cassandra/Astra DB values.
+
+```bash
+mvn clean install
+mvn spring-boot:run
+```
+
+> Never commit real database passwords, API keys, connection strings, or secure-connect credentials.
+
+### Frontend
+
+```bash
+git clone https://github.com/elad9219/tinyurl-frontend.git
+cd tinyurl-frontend
+npm install
+npm start
+```
+
+### Docker
+
+After configuring the required database connections:
+
+```bash
+docker build -t tinyurl-backend .
+docker run -p 8080:8080 tinyurl-backend
+```
 
 ## Project Structure
-### Backend (`elad9219/tinyurl`)
-```
-tinyurl/
-├── src/
-│   ├── main/
-│   │   ├── java/com/handson/tinyurl/
-│   │   │   ├── config/CorsConfig.java
-│   │   │   ├── controller/AppController.java
-│   │   │   ├── model/
-│   │   │   ├── repository/
-│   │   │   ├── service/
-│   │   │   ├── util/
-│   │   ├── resources/
-│   │   │   ├── static/ (React build files)
-│   │   │   ├── application.properties
-├── pom.xml
-├── Dockerfile
+
+### Backend
+
+```text
+src/main/java/com/handson/tinyurl/
+├── config/
+├── controller/
+├── model/
+├── repository/
+├── service/
+└── util/
 ```
 
-### Frontend (`elad9219/tinyurl-frontend`)
-```
-tinyurl-frontend/
-├── src/
-│   ├── components/
-│   ├── utils/
-│   │   ├── globals.ts
-│   ├── App.tsx
-├── public/
-├── package.json
-├── tsconfig.json
-```
+### Frontend
 
-## Contributing
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature-name`.
-3. Commit changes: `git commit -m 'Add feature'`.
-4. Push to the branch: `git push origin feature-name`.
-5. Open a pull request.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```text
+src/
+├── components/
+├── utils/
+└── App.tsx
+```
 
 ## Contact
-- **Author**: Elad Tennenboim
-- **GitHub**: [elad9219](https://github.com/elad9219)
-- **Email**: elad9219@gmail.com
-- **LinkedIn**: https://www.linkedin.com/in/elad-tennenboim/
 
----
-
-Thank you for exploring TinyURL! Feel free to reach out with questions or feedback.
+- **Elad Tennenboim**
+- **GitHub:** [elad9219](https://github.com/elad9219)
+- **LinkedIn:** [linkedin.com/in/elad-tennenboim](https://www.linkedin.com/in/elad-tennenboim/)
+- **Email:** elad9219@gmail.com
