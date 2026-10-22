@@ -1,47 +1,59 @@
-import axios from 'axios';
 
-const axiosInstance = axios.create();
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 
-// Response interceptor with an advanced Retry Mechanism for CORS & Cold Starts
+interface RetryableRequestConfig extends AxiosRequestConfig {
+    _readRetryCount?: number;
+}
+
+const axiosInstance = axios.create({
+    timeout: 20000,
+});
+
+// Only read-only GET requests may be automatically repeated.
+// Retrying POST after a lost response can create duplicate users or links.
 axiosInstance.interceptors.response.use(
-    async (response) => {
-        // Detect if the free server is waking up and returning an HTML loading page
-        if (typeof response.data === 'string' && response.data.toLowerCase().includes('<html')) {
-            const config = { ...response.config } as any;
-            config._retryCount = (config._retryCount || 0) + 1;
-            
-            // Retry up to 10 times (approx 30 seconds total waiting)
-            if (config._retryCount <= 10) {
-                window.dispatchEvent(new Event('serverWakingUp'));
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                return axiosInstance(config);
-            }
-            return Promise.reject(new Error("Server timeout"));
+    (response) => {
+        if (
+            typeof response.data === 'string' &&
+            /<!doctype html|<html/i.test(response.data.slice(0, 500))
+        ) {
+            return Promise.reject(
+                new Error('The server returned an unexpected page. Please try again.')
+            );
         }
-
-        window.dispatchEvent(new Event('serverAwake'));
         return response;
     },
-    async (error) => {
-        // Identify standard cold start errors: 502, 503, 504, or absolute Network Error (CORS block)
-        const isCorsOrNetworkError = 
-            !error.response || 
-            error.message === 'Network Error' || 
+    async (error: AxiosError) => {
+        const config = error.config as RetryableRequestConfig | undefined;
+        const method = (config?.method || 'get').toLowerCase();
+        const status = error.response?.status;
+        const retryable =
+            status === 502 ||
+            status === 503 ||
+            status === 504 ||
             error.code === 'ERR_NETWORK' ||
-            error.response.status >= 500;
+            error.code === 'ECONNABORTED' ||
+            error.message === 'Network Error';
 
-        if (isCorsOrNetworkError && error.config) {
-            const config = { ...error.config } as any;
-            config._retryCount = (config._retryCount || 0) + 1;
-
-            if (config._retryCount <= 10) {
-                window.dispatchEvent(new Event('serverWakingUp'));
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                return axiosInstance(config);
-            }
+        if (!config || method !== 'get' || !retryable || config.signal?.aborted) {
+            return Promise.reject(error);
         }
 
-        return Promise.reject(error);
+        const retryCount = (config._readRetryCount || 0) + 1;
+        if (retryCount > 2) {
+            return Promise.reject(error);
+        }
+
+        config._readRetryCount = retryCount;
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, retryCount * 2000);
+        });
+
+        if (config.signal?.aborted) {
+            return Promise.reject(error);
+        }
+
+        return axiosInstance(config);
     }
 );
 
