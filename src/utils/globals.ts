@@ -13,12 +13,12 @@ class Globals {
         this.api = {
             user: `${base}/user`,
             tiny: `${base}/tiny`,
-            health: `${base}/v2/api-docs`,
+            health: `${base}/actuator/health`,
             shortBase: base,
             userInfo: (username: string) =>
-                `${base}/user/${encodeURIComponent(username)}`,
+                `${base}/user?name=${encodeURIComponent(username)}`,
             userClicks: (username: string) =>
-                `${base}/user/${encodeURIComponent(username)}/clicks`,
+                `${base}/user/clicks?name=${encodeURIComponent(username)}`,
         };
     }
 }

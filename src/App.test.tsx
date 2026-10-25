@@ -1,6 +1,10 @@
 
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import {
+    fireEvent,
+    render,
+    screen,
+} from '@testing-library/react';
 import App from './App';
 
 jest.mock('axios', () => {
@@ -21,7 +25,7 @@ jest.mock('axios', () => {
             get: jest.fn().mockResolvedValue({
                 status: 200,
                 data: {
-                    swagger: '2.0',
+                    status: 'UP',
                 },
             }),
             isAxiosError: jest.fn(() => false),
@@ -61,23 +65,33 @@ test('renders all four TinyURL features', () => {
             name: 'Click Details',
         })
     ).toBeInTheDocument();
+
+    expect(
+        screen.queryByText(
+            /Connecting to the free demo server/i
+        )
+    ).not.toBeInTheDocument();
 });
 
 test('opens and closes the database help section', () => {
     render(<App />);
 
-    const helpButton = screen.getByRole('button', {
-        name: 'How does TinyURL work?',
-    });
-
-    fireEvent.click(helpButton);
+    fireEvent.click(
+        screen.getByRole('button', {
+            name: 'How does TinyURL work?',
+        })
+    );
 
     expect(
-        screen.getByText(/stores short-link mappings for fast redirects/i)
+        screen.getByText(
+            /stores short-link mappings for fast redirects/i
+        )
     ).toBeInTheDocument();
 
     expect(
-        screen.getByText(/records individual click events/i)
+        screen.getByText(
+            /records individual click events/i
+        )
     ).toBeInTheDocument();
 
     fireEvent.click(
@@ -87,6 +101,8 @@ test('opens and closes the database help section', () => {
     );
 
     expect(
-        screen.queryByText(/stores short-link mappings for fast redirects/i)
+        screen.queryByText(
+            /stores short-link mappings for fast redirects/i
+        )
     ).not.toBeInTheDocument();
 });

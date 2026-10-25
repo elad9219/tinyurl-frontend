@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { format, isValid, parse } from 'date-fns';
 import axiosInstance from '../../../utils/axiosInstance';
@@ -32,11 +32,11 @@ interface Notice {
 }
 
 const WAKE_TIMEOUT_MS = 120000;
+const HEALTH_REQUEST_TIMEOUT_MS = 12000;
+const HEALTH_RETRY_MS = 4000;
 
 function isClickEntry(value: unknown): value is ClickEntry {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
+    if (typeof value !== 'object' || value === null) return false;
 
     const item = value as Partial<ClickEntry>;
 
@@ -55,22 +55,19 @@ function errorMessage(error: unknown, fallback: string): string {
         }
 
         if (status === 404) {
-            if (typeof data === 'string') {
-                const message = data.trim();
-
-                if (
-                    message.length > 0 &&
-                    message.length < 250 &&
-                    !/<html/i.test(message)
-                ) {
-                    return message;
-                }
+            if (
+                typeof data === 'string'
+                && data.trim().length > 0
+                && data.length < 250
+                && !/<html/i.test(data)
+            ) {
+                return data.trim();
             }
 
             return 'User not found.';
         }
 
-        if (status === 502 || status === 503 || status === 504) {
+        if ([502, 503, 504].includes(status || 0)) {
             return 'The server is temporarily unavailable. Please try again shortly.';
         }
 
@@ -79,21 +76,25 @@ function errorMessage(error: unknown, fallback: string): string {
         }
 
         if (
-            typeof data === 'string' &&
-            data.trim().length > 0 &&
-            data.length < 250 &&
-            !/<html/i.test(data)
+            typeof data === 'string'
+            && data.trim().length > 0
+            && data.length < 250
+            && !/<html/i.test(data)
         ) {
             return data.trim();
         }
 
-        if (data && typeof data === 'object' && 'message' in data) {
+        if (
+            data
+            && typeof data === 'object'
+            && 'message' in data
+        ) {
             const message = (data as { message?: unknown }).message;
 
             if (
-                typeof message === 'string' &&
-                message.trim().length > 0 &&
-                message.length < 250
+                typeof message === 'string'
+                && message.trim().length > 0
+                && message.length < 250
             ) {
                 return message.trim();
             }
@@ -104,15 +105,17 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function formatClickDate(value: string): string {
-    const parsed = parse(value, 'yyyy-MM-dd HH:mm:ss', new Date());
+    const parsed = parse(
+        value,
+        'yyyy-MM-dd HH:mm:ss',
+        new Date()
+    );
 
     return isValid(parsed)
         ? format(parsed, "dd/MM/yyyy 'at' HH:mm:ss")
         : value;
 }
 
-// Check MongoDB user existence before requesting click history.
-// HTTP 404 is an expected result for a missing user.
 async function findUser(name: string): Promise<UserInfo | null> {
     const response = await axiosInstance.get<UserInfo>(
         globals.api.userInfo(name),
@@ -127,14 +130,37 @@ async function findUser(name: string): Promise<UserInfo | null> {
     }
 
     if (
-        response.status !== 200 ||
-        !response.data ||
-        typeof response.data.name !== 'string'
+        response.status !== 200
+        || !response.data
+        || typeof response.data.name !== 'string'
     ) {
         throw new Error('Unexpected user response');
     }
 
     return response.data;
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+            reject(new Error('Connection check cancelled'));
+            return;
+        }
+
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(new Error('Connection check cancelled'));
+        };
+
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+
+        signal.addEventListener('abort', onAbort, {
+            once: true,
+        });
+    });
 }
 
 const TinyUrlApp: React.FC = () => {
@@ -145,72 +171,191 @@ const TinyUrlApp: React.FC = () => {
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
     const [clicks, setClicks] = useState<ClickEntry[]>([]);
 
-    const [createUserNotice, setCreateUserNotice] = useState<Notice | null>(null);
-    const [createTinyNotice, setCreateTinyNotice] = useState<Notice | null>(null);
-    const [userInfoNotice, setUserInfoNotice] = useState<Notice | null>(null);
-    const [clicksNotice, setClicksNotice] = useState<Notice | null>(null);
+    const [createUserNotice, setCreateUserNotice] =
+        useState<Notice | null>(null);
+
+    const [createTinyNotice, setCreateTinyNotice] =
+        useState<Notice | null>(null);
+
+    const [userInfoNotice, setUserInfoNotice] =
+        useState<Notice | null>(null);
+
+    const [clicksNotice, setClicksNotice] =
+        useState<Notice | null>(null);
 
     const [isCreatingUser, setIsCreatingUser] = useState(false);
     const [isCreatingTiny, setIsCreatingTiny] = useState(false);
     const [isLoadingUser, setIsLoadingUser] = useState(false);
     const [isLoadingClicks, setIsLoadingClicks] = useState(false);
 
-    const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
-    const [wakeRequest, setWakeRequest] = useState(0);
+    const [serverStatus, setServerStatus] =
+        useState<ServerStatus>('checking');
+
+    const [waitingActions, setWaitingActions] = useState(0);
+    const [hasAttemptedAction, setHasAttemptedAction] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const [copyMessage, setCopyMessage] = useState('');
 
     const usernameVersion = useRef(0);
+    const urlVersion = useRef(0);
+    const serverReady = useRef(false);
+    const wakePromise = useRef<Promise<void> | null>(null);
+    const queuedActionsRef = useRef(0);
+    const wakeController = useRef<AbortController | null>(null);
+    const mounted = useRef(false);
 
-    useEffect(() => {
+    // Share one wake-up attempt between all pending actions.
+    const ensureServerReady = useCallback((): Promise<void> => {
+        if (serverReady.current) {
+            return Promise.resolve();
+        }
+
+        if (wakePromise.current) {
+            return wakePromise.current;
+        }
+
         const controller = new AbortController();
-        let active = true;
-        const startedAt = Date.now();
+        wakeController.current = controller;
 
-        const wakeServer = async () => {
+        if (mounted.current) {
             setServerStatus('checking');
+        }
 
-            while (active && Date.now() - startedAt < WAKE_TIMEOUT_MS) {
-                try {
-                    const response = await axios.get(globals.api.health, {
-                        timeout: 12000,
-                        signal: controller.signal,
-                        headers: { Accept: 'application/json' },
-                    });
+        const promise = (async () => {
+            const startedAt = Date.now();
 
-                    if (
-                        response.status === 200 &&
-                        response.data?.swagger === '2.0'
-                    ) {
-                        if (active) {
-                            setServerStatus('ready');
-                        }
+            while (!controller.signal.aborted) {
+                const elapsed = Date.now() - startedAt;
 
-                        return;
+                // Stop idle polling after two minutes.
+                // Keep polling if the user has a pending action.
+                if (elapsed >= WAKE_TIMEOUT_MS) {
+                    if (queuedActionsRef.current === 0) {
+                        break;
                     }
-                } catch (error) {
-                    if (controller.signal.aborted) {
-                        return;
+
+                    if (mounted.current) {
+                        setServerStatus('error');
                     }
                 }
 
-                await new Promise<void>((resolve) => {
-                    setTimeout(resolve, 4000);
-                });
+                try {
+                    const response = await axios.get(
+                        globals.api.health,
+                        {
+                            timeout: HEALTH_REQUEST_TIMEOUT_MS,
+                            signal: controller.signal,
+                            headers: {
+                                Accept: 'application/json',
+                            },
+                        }
+                    );
+
+                    if (
+                        response.status === 200
+                        && response.data?.status === 'UP'
+                    ) {
+                        return;
+                    }
+                } catch (_error) {
+                    if (controller.signal.aborted) {
+                        break;
+                    }
+                }
+
+                if (!controller.signal.aborted) {
+                    await sleep(
+                        elapsed >= WAKE_TIMEOUT_MS
+                            ? 15000
+                            : HEALTH_RETRY_MS,
+                        controller.signal
+                    );
+                }
             }
 
-            if (active) {
-                setServerStatus('error');
-            }
-        };
+            throw new Error(
+                'Demo server did not become ready in time'
+            );
+        })();
 
-        void wakeServer();
+        wakePromise.current = promise;
+
+        // Handle completion without an unhandled rejection.
+        void promise.then(
+            () => {
+                if (!controller.signal.aborted) {
+                    serverReady.current = true;
+
+                    if (mounted.current) {
+                        setServerStatus('ready');
+                    }
+                }
+
+                if (wakePromise.current === promise) {
+                    wakePromise.current = null;
+                }
+            },
+            () => {
+                if (!controller.signal.aborted && mounted.current) {
+                    setServerStatus('error');
+                }
+
+                if (wakePromise.current === promise) {
+                    wakePromise.current = null;
+                }
+            }
+        );
+
+        return promise;
+    }, []);
+
+    // Start the wake-up check silently on page load.
+    useEffect(() => {
+        mounted.current = true;
+
+        void ensureServerReady().catch(() => undefined);
 
         return () => {
-            active = false;
-            controller.abort();
+            mounted.current = false;
+            wakeController.current?.abort();
+            wakeController.current = null;
+            wakePromise.current = null;
         };
-    }, [wakeRequest]);
+    }, [ensureServerReady]);
+
+    // Execute a user action once the backend is ready.
+    const runWhenReady = async (
+        action: () => Promise<void>
+    ): Promise<void> => {
+        const hadToWait = !serverReady.current;
+
+        if (hadToWait) {
+            queuedActionsRef.current += 1;
+            setHasAttemptedAction(true);
+            setWaitingActions((count) => count + 1);
+        }
+
+        try {
+            await ensureServerReady();
+
+            if (mounted.current) {
+                await action();
+            }
+        } finally {
+            if (hadToWait) {
+                queuedActionsRef.current = Math.max(
+                    0,
+                    queuedActionsRef.current - 1
+                );
+
+                if (mounted.current) {
+                    setWaitingActions((count) =>
+                        Math.max(0, count - 1)
+                    );
+                }
+            }
+        }
+    };
 
     const updateUsername = (value: string) => {
         usernameVersion.current += 1;
@@ -238,7 +383,9 @@ const TinyUrlApp: React.FC = () => {
             return;
         }
 
-        if (isCreatingUser) return;
+        if (isCreatingUser) {
+            return;
+        }
 
         const version = usernameVersion.current;
 
@@ -246,18 +393,30 @@ const TinyUrlApp: React.FC = () => {
         setCreateUserNotice(null);
 
         try {
-            await axiosInstance.post(globals.api.user, null, {
-                params: { name },
-            });
+            await runWhenReady(async () => {
+                // Do not submit a stale username.
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            if (version === usernameVersion.current) {
-                setCreateUserNotice({
-                    text: 'User created successfully.',
-                    kind: 'success',
-                });
-            }
+                await axiosInstance.post(
+                    globals.api.user,
+                    null,
+                    { params: { name } }
+                );
+
+                if (version === usernameVersion.current) {
+                    setCreateUserNotice({
+                        text: 'User created successfully.',
+                        kind: 'success',
+                    });
+                }
+            });
         } catch (error) {
-            if (version === usernameVersion.current) {
+            if (
+                version === usernameVersion.current
+                && mounted.current
+            ) {
                 setCreateUserNotice({
                     text: errorMessage(
                         error,
@@ -267,7 +426,9 @@ const TinyUrlApp: React.FC = () => {
                 });
             }
         } finally {
-            setIsCreatingUser(false);
+            if (mounted.current) {
+                setIsCreatingUser(false);
+            }
         }
     };
 
@@ -283,9 +444,12 @@ const TinyUrlApp: React.FC = () => {
             return;
         }
 
-        if (isCreatingTiny) return;
+        if (isCreatingTiny) {
+            return;
+        }
 
         const version = usernameVersion.current;
+        const currentUrlVersion = urlVersion.current;
         const shouldRefreshUserInfo = userInfo?.name === name;
 
         setIsCreatingTiny(true);
@@ -294,66 +458,82 @@ const TinyUrlApp: React.FC = () => {
         setCreateTinyNotice(null);
 
         try {
-            const response = await axiosInstance.post(
-                globals.api.tiny,
-                {
-                    longUrl: url,
-                    userName: name,
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+            await runWhenReady(async () => {
+                if (
+                    version !== usernameVersion.current
+                    || currentUrlVersion !== urlVersion.current
+                ) {
+                    return;
                 }
-            );
 
-            if (
-                typeof response.data !== 'string' ||
-                !/^https?:\/\//i.test(response.data)
-            ) {
-                throw new Error('Unexpected URL response');
-            }
+                const response = await axiosInstance.post(
+                    globals.api.tiny,
+                    {
+                        longUrl: url,
+                        userName: name,
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    }
+                );
 
-            if (version !== usernameVersion.current) return;
+                if (
+                    typeof response.data !== 'string'
+                    || !/^https?:\/\//i.test(response.data)
+                ) {
+                    throw new Error('Unexpected URL response');
+                }
 
-            const result = response.data.endsWith('/')
-                ? response.data
-                : `${response.data}/`;
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            setTinyUrl(result);
-            setLongUrl('');
+                const result = response.data.endsWith('/')
+                    ? response.data
+                    : `${response.data}/`;
 
-            setCreateTinyNotice({
-                text: 'Your short link is ready.',
-                kind: 'success',
-            });
+                setTinyUrl(result);
+                setLongUrl('');
+                urlVersion.current += 1;
 
-            if (shouldRefreshUserInfo) {
-                try {
-                    const updatedUser = await findUser(name);
+                setCreateTinyNotice({
+                    text: 'Your short link is ready.',
+                    kind: 'success',
+                });
 
-                    if (version === usernameVersion.current) {
-                        setUserInfo(updatedUser);
+                if (shouldRefreshUserInfo) {
+                    try {
+                        const updatedUser = await findUser(name);
 
-                        if (updatedUser === null) {
+                        if (version === usernameVersion.current) {
+                            setUserInfo(updatedUser);
+
+                            if (updatedUser === null) {
+                                setUserInfoNotice({
+                                    text: 'User not found.',
+                                    kind: 'error',
+                                });
+                            }
+                        }
+                    } catch (_error) {
+                        if (version === usernameVersion.current) {
+                            setUserInfo(null);
+
                             setUserInfoNotice({
-                                text: 'User not found.',
-                                kind: 'error',
+                                text: 'Link created. Click Get Info to refresh your links.',
+                                kind: 'info',
                             });
                         }
                     }
-                } catch (error) {
-                    if (version === usernameVersion.current) {
-                        setUserInfo(null);
-                        setUserInfoNotice({
-                            text: 'Link created. Click Get Info to refresh your links.',
-                            kind: 'info',
-                        });
-                    }
                 }
-            }
+            });
         } catch (error) {
-            if (version === usernameVersion.current) {
+            if (
+                version === usernameVersion.current
+                && mounted.current
+            ) {
                 setCreateTinyNotice({
                     text: errorMessage(
                         error,
@@ -363,7 +543,9 @@ const TinyUrlApp: React.FC = () => {
                 });
             }
         } finally {
-            setIsCreatingTiny(false);
+            if (mounted.current) {
+                setIsCreatingTiny(false);
+            }
         }
     };
 
@@ -378,7 +560,9 @@ const TinyUrlApp: React.FC = () => {
             return;
         }
 
-        if (isLoadingUser) return;
+        if (isLoadingUser) {
+            return;
+        }
 
         const version = usernameVersion.current;
 
@@ -387,21 +571,32 @@ const TinyUrlApp: React.FC = () => {
         setUserInfo(null);
 
         try {
-            const user = await findUser(name);
+            await runWhenReady(async () => {
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            if (version !== usernameVersion.current) return;
+                const user = await findUser(name);
 
-            if (user === null) {
-                setUserInfoNotice({
-                    text: 'User not found.',
-                    kind: 'error',
-                });
-                return;
-            }
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            setUserInfo(user);
+                if (user === null) {
+                    setUserInfoNotice({
+                        text: 'User not found.',
+                        kind: 'error',
+                    });
+                    return;
+                }
+
+                setUserInfo(user);
+            });
         } catch (error) {
-            if (version === usernameVersion.current) {
+            if (
+                version === usernameVersion.current
+                && mounted.current
+            ) {
                 setUserInfoNotice({
                     text: errorMessage(
                         error,
@@ -411,7 +606,9 @@ const TinyUrlApp: React.FC = () => {
                 });
             }
         } finally {
-            setIsLoadingUser(false);
+            if (mounted.current) {
+                setIsLoadingUser(false);
+            }
         }
     };
 
@@ -426,7 +623,9 @@ const TinyUrlApp: React.FC = () => {
             return;
         }
 
-        if (isLoadingClicks) return;
+        if (isLoadingClicks) {
+            return;
+        }
 
         const version = usernameVersion.current;
 
@@ -435,43 +634,58 @@ const TinyUrlApp: React.FC = () => {
         setClicks([]);
 
         try {
-            // Check MongoDB first, then read click events from Cassandra.
-            // Keep the existing clicks endpoint compatible with keepalive jobs.
-            const user = await findUser(name);
+            await runWhenReady(async () => {
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            if (version !== usernameVersion.current) return;
+                // Check MongoDB first to distinguish
+                // missing users from empty click history.
+                const user = await findUser(name);
 
-            if (user === null) {
-                setClicksNotice({
-                    text: 'User not found.',
-                    kind: 'error',
-                });
-                return;
-            }
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            const response = await axiosInstance.get<ClickEntry[]>(
-                globals.api.userClicks(name)
-            );
+                if (user === null) {
+                    setClicksNotice({
+                        text: 'User not found.',
+                        kind: 'error',
+                    });
+                    return;
+                }
 
-            if (
-                !Array.isArray(response.data) ||
-                !response.data.every(isClickEntry)
-            ) {
-                throw new Error('Unexpected click-history response');
-            }
+                const response = await axiosInstance.get<ClickEntry[]>(
+                    globals.api.userClicks(name)
+                );
 
-            if (version !== usernameVersion.current) return;
+                if (
+                    !Array.isArray(response.data)
+                    || !response.data.every(isClickEntry)
+                ) {
+                    throw new Error(
+                        'Unexpected click-history response'
+                    );
+                }
 
-            setClicks(response.data);
+                if (version !== usernameVersion.current) {
+                    return;
+                }
 
-            if (response.data.length === 0) {
-                setClicksNotice({
-                    text: 'No clicks recorded for this user yet.',
-                    kind: 'info',
-                });
-            }
+                setClicks(response.data);
+
+                if (response.data.length === 0) {
+                    setClicksNotice({
+                        text: 'No clicks recorded for this user yet.',
+                        kind: 'info',
+                    });
+                }
+            });
         } catch (error) {
-            if (version === usernameVersion.current) {
+            if (
+                version === usernameVersion.current
+                && mounted.current
+            ) {
                 setClicksNotice({
                     text: errorMessage(
                         error,
@@ -481,7 +695,9 @@ const TinyUrlApp: React.FC = () => {
                 });
             }
         } finally {
-            setIsLoadingClicks(false);
+            if (mounted.current) {
+                setIsLoadingClicks(false);
+            }
         }
     };
 
@@ -489,15 +705,23 @@ const TinyUrlApp: React.FC = () => {
         try {
             await navigator.clipboard.writeText(tinyUrl);
             setCopyMessage('Copied!');
-        } catch (error) {
+        } catch (_error) {
             setCopyMessage(
                 'Copy failed. You can select the link and copy it manually.'
             );
         }
     };
 
-    const isChecking = serverStatus === 'checking';
-    const shortEntries = Object.entries(userInfo?.shorts || {});
+    const showServerNotice =
+        serverStatus !== 'ready'
+        && (
+            waitingActions > 0
+            || (hasAttemptedAction && serverStatus === 'error')
+        );
+
+    const shortEntries = Object.entries(
+        userInfo?.shorts || {}
+    );
 
     return (
         <main className="tinyurl-app">
@@ -505,39 +729,48 @@ const TinyUrlApp: React.FC = () => {
                 <h1 className="title">
                     TinyURL - Shorten Your Links
                 </h1>
+
                 <p className="subtitle">
                     Create short links and explore click analytics.
                 </p>
             </header>
 
-            {serverStatus !== 'ready' && (
+            {showServerNotice && (
                 <div
                     className={`server-notice ${
-                        serverStatus === 'error' ? 'server-error' : ''
+                        serverStatus === 'error'
+                            ? 'server-error'
+                            : ''
                     }`}
                     role="status"
                     aria-live="polite"
                 >
-                    {isChecking ? (
+                    {serverStatus === 'checking' ? (
                         <span>
                             ⏳ Connecting to the free demo server.
-                            The first visit may take a little longer...
+                            Your action will run automatically when it is ready...
                         </span>
                     ) : (
                         <>
                             <span>
                                 The server is taking longer than expected.
-                                You can retry the connection.
+                                {waitingActions > 0
+                                    ? ' Your action is still queued and will run automatically when ready.'
+                                    : ' Please retry the connection.'}
                             </span>
-                            <button
-                                type="button"
-                                className="retry-button"
-                                onClick={() =>
-                                    setWakeRequest((count) => count + 1)
-                                }
-                            >
-                                Retry connection
-                            </button>
+
+                            {waitingActions === 0 && (
+                                <button
+                                    type="button"
+                                    className="retry-button"
+                                    onClick={() => {
+                                        void ensureServerReady()
+                                            .catch(() => undefined);
+                                    }}
+                                >
+                                    Retry connection
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -547,7 +780,9 @@ const TinyUrlApp: React.FC = () => {
                 <button
                     type="button"
                     className="help-button"
-                    onClick={() => setShowHelp((value) => !value)}
+                    onClick={() =>
+                        setShowHelp((value) => !value)
+                    }
                     aria-expanded={showHelp}
                 >
                     {showHelp
@@ -561,14 +796,17 @@ const TinyUrlApp: React.FC = () => {
                             <strong>Redis:</strong> stores short-link
                             mappings for fast redirects.
                         </p>
+
                         <p>
                             <strong>MongoDB:</strong> stores users,
                             link metadata and click counters.
                         </p>
+
                         <p>
                             <strong>Cassandra:</strong> records
                             individual click events for history and analytics.
                         </p>
+
                         <p className="help-note">
                             Public demo: do not enter personal or
                             sensitive information.
@@ -579,7 +817,9 @@ const TinyUrlApp: React.FC = () => {
 
             <div className="sections-container">
                 <section className="section">
-                    <h2 className="section-title">Create New User</h2>
+                    <h2 className="section-title">
+                        Create New User
+                    </h2>
 
                     <input
                         type="text"
@@ -590,16 +830,17 @@ const TinyUrlApp: React.FC = () => {
                         placeholder="Username"
                         aria-label="Username for new user"
                         className="input"
-                        disabled={isChecking}
                     />
 
                     <button
                         type="button"
                         onClick={handleCreateUser}
                         className="button create-user"
-                        disabled={isCreatingUser || isChecking}
+                        disabled={isCreatingUser}
                     >
-                        {isCreatingUser ? 'Creating...' : 'Create User'}
+                        {isCreatingUser
+                            ? 'Creating...'
+                            : 'Create User'}
                     </button>
 
                     {createUserNotice && (
@@ -613,7 +854,9 @@ const TinyUrlApp: React.FC = () => {
                 </section>
 
                 <section className="section">
-                    <h2 className="section-title">Create Tiny URL</h2>
+                    <h2 className="section-title">
+                        Create Tiny URL
+                    </h2>
 
                     <input
                         type="text"
@@ -624,28 +867,29 @@ const TinyUrlApp: React.FC = () => {
                         placeholder="Username"
                         aria-label="Username for short URL"
                         className="input"
-                        disabled={isChecking}
                     />
 
                     <input
                         type="text"
                         value={longUrl}
-                        onChange={(event) =>
-                            setLongUrl(event.target.value)
-                        }
+                        onChange={(event) => {
+                            urlVersion.current += 1;
+                            setLongUrl(event.target.value);
+                        }}
                         placeholder="Enter URL (e.g. example.com)"
                         aria-label="Original URL"
                         className="input"
-                        disabled={isChecking}
                     />
 
                     <button
                         type="button"
                         onClick={handleCreateTinyUrl}
                         className="button create-tiny"
-                        disabled={isCreatingTiny || isChecking}
+                        disabled={isCreatingTiny}
                     >
-                        {isCreatingTiny ? 'Creating...' : 'Create Tiny URL'}
+                        {isCreatingTiny
+                            ? 'Creating...'
+                            : 'Create Tiny URL'}
                     </button>
 
                     {createTinyNotice && (
@@ -690,7 +934,9 @@ const TinyUrlApp: React.FC = () => {
                 </section>
 
                 <section className="section">
-                    <h2 className="section-title">User Information</h2>
+                    <h2 className="section-title">
+                        User Information
+                    </h2>
 
                     <input
                         type="text"
@@ -701,16 +947,17 @@ const TinyUrlApp: React.FC = () => {
                         placeholder="Username"
                         aria-label="Username for user information"
                         className="input"
-                        disabled={isChecking}
                     />
 
                     <button
                         type="button"
                         onClick={handleGetUserInfo}
                         className="button get-info"
-                        disabled={isLoadingUser || isChecking}
+                        disabled={isLoadingUser}
                     >
-                        {isLoadingUser ? 'Loading...' : 'Get Info'}
+                        {isLoadingUser
+                            ? 'Loading...'
+                            : 'Get Info'}
                     </button>
 
                     {userInfoNotice && (
@@ -746,10 +993,7 @@ const TinyUrlApp: React.FC = () => {
                                         return (
                                             <li key={code}>
                                                 <a
-                                                    href={
-                                                        `${globals.api.shortBase}/` +
-                                                        `${encodeURIComponent(code)}/`
-                                                    }
+                                                    href={`${globals.api.shortBase}/${encodeURIComponent(code)}/`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                 >
@@ -785,7 +1029,9 @@ const TinyUrlApp: React.FC = () => {
                 </section>
 
                 <section className="section">
-                    <h2 className="section-title">Click Details</h2>
+                    <h2 className="section-title">
+                        Click Details
+                    </h2>
 
                     <input
                         type="text"
@@ -796,16 +1042,17 @@ const TinyUrlApp: React.FC = () => {
                         placeholder="Username"
                         aria-label="Username for click details"
                         className="input"
-                        disabled={isChecking}
                     />
 
                     <button
                         type="button"
                         onClick={handleGetClicks}
                         className="button get-clicks"
-                        disabled={isLoadingClicks || isChecking}
+                        disabled={isLoadingClicks}
                     >
-                        {isLoadingClicks ? 'Loading...' : 'Get Clicks'}
+                        {isLoadingClicks
+                            ? 'Loading...'
+                            : 'Get Clicks'}
                     </button>
 
                     {clicksNotice && (
@@ -821,10 +1068,7 @@ const TinyUrlApp: React.FC = () => {
                         <ul className="clicks-list">
                             {clicks.map((click, index) => (
                                 <li
-                                    key={
-                                        `${click.tiny}-` +
-                                        `${click.clickTime}-${index}`
-                                    }
+                                    key={`${click.tiny}-${click.clickTime}-${index}`}
                                 >
                                     <span className="click-date">
                                         {formatClickDate(click.clickTime)}
