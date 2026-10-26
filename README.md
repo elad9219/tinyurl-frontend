@@ -1,42 +1,111 @@
-# TinyURL — URL Shortening & Click Analytics Service
+# TinyURL — React Frontend
 
-A full-stack URL shortening application built with Spring Boot and React. The project separates storage responsibilities across Redis, MongoDB, and Cassandra to support fast redirects, user/URL metadata, and click-history analytics.
+The **React 19 + TypeScript** interface for a full-stack URL shortening and click analytics application. Users can create accounts, generate short links, open redirects, and explore click activity through a single web interface.
 
-## Quick Links
+**Live demo:** https://etinyurl.vercel.app/  
+**Backend API:** https://url.runmydocker-app.com/  
+**Backend repository:** https://github.com/elad9219/tinyurl  
+**API documentation:** https://url.runmydocker-app.com/swagger-ui/index.html
 
-- **Live Demo:** [etinyurl.vercel.app](https://etinyurl.vercel.app/)
-- **API Documentation (Swagger):** [surl.runmydocker-app.com/swagger-ui.html](https://surl.runmydocker-app.com/swagger-ui.html)
-- **Backend Repository:** [github.com/elad9219/tinyurl](https://github.com/elad9219/tinyurl)
-- **Frontend Repository:** [github.com/elad9219/tinyurl-frontend](https://github.com/elad9219/tinyurl-frontend)
+## Features
 
-## Highlights
+- **Create User:** Register a username and receive feedback if it already exists.
+- **Create Tiny URL:** Submit a long URL for an existing user and receive a shareable short link.
+- **User Information:** Look up the user's short links and aggregated click counts.
+- **Click Details:** Inspect link click history, including timestamps and destination URLs.
+- **Server readiness handling:** Check the backend health endpoint and queue a requested action while a sleeping demo server becomes available.
+- **Resilient requests:** Retry eligible read-only requests on transient network/server failures; avoid blindly retrying writes that could create duplicates.
+- **Special-character usernames:** Encode usernames as query parameters, including names containing `/`.
 
-- **URL shortening:** Creates compact URLs and redirects visitors to the original destination.
-- **Fast URL resolution:** Uses Redis for short-code-to-URL lookup.
-- **User and URL metadata:** Stores user data and URL metadata in MongoDB.
-- **Click analytics:** Stores click history in Cassandra and exposes per-user and per-URL statistics.
-- **URL normalization:** Normalizes submitted URLs for consistent storage and redirection.
-- **Responsive frontend:** React interface for creating users, shortening URLs, and viewing analytics.
-- **Dockerized backend:** Supports containerized deployment.
+## Technology stack
 
-## Storage Design
-
-| Store | Responsibility |
+| Area | Technologies |
 | --- | --- |
-| Redis | Fast URL lookup / redirect mapping |
-| MongoDB | User data and short-URL metadata |
-| Cassandra | Click-history and analytics data |
+| UI | React 19, React DOM, TypeScript 4.9 |
+| HTTP | Axios |
+| Tests | React Testing Library, Jest (through React Scripts) |
+| Build tooling | Create React App / `react-scripts` 5.0.1 |
+| Deployment | Vercel |
+| Backend | Java 21, Spring Boot 4.1.2 |
+| Data services (via API) | Redis, MongoDB Atlas, Astra DB / Cassandra |
 
-## Technologies
+The current project still uses **Create React App**. Moving to a modern build tool such as Vite is a potential future improvement, not part of the deployed upgrade.
 
-- **Backend:** Java 11, Spring Boot, Maven
-- **Frontend:** React, TypeScript, Node.js, npm
-- **Databases:** MongoDB, Redis, Cassandra
-- **Containerization:** Docker
-- **Deployment:** Render / Vercel
-- **Other:** Jackson, SLF4J, Git, GitHub
+## How it works
+
+```mermaid
+flowchart LR
+    UI[React app on Vercel] --> Health[Health / readiness check]
+    UI --> API[Spring Boot API on RunMyDocker]
+    API --> Redis[(Redis)]
+    API --> Mongo[(MongoDB)]
+    API --> Cassandra[(Astra DB / Cassandra)]
+```
+
+The frontend communicates with the backend over HTTP(S). It does not connect directly to the databases.
+
+### Backend readiness and queued actions
+
+The public demo backend may be sleeping when a visitor arrives. The interface checks `/actuator/health` and allows the visitor to initiate an action while the service wakes up. The requested operation runs when the backend becomes ready. This helps avoid repeated manual clicks during startup.
+
+For transient failures, the Axios instance retries **read-only GET requests** in eligible cases. It does not automatically replay POST requests, which could accidentally duplicate user creation or short-link generation.
+
+## Run locally
+
+### Requirements
+
+- Node.js and npm compatible with the project's dependencies
+- A running TinyURL backend reachable on port `8080`
+
+Clone and install:
+
+```bash
+git clone https://github.com/elad9219/tinyurl-frontend.git
+cd tinyurl-frontend
+npm ci
+```
+
+Start the frontend:
+
+```bash
+npm start
+```
+
+By default, the development UI runs at `http://localhost:3000` and uses the backend at `http://localhost:8080`.
+
+### Tests and production build
+
+```bash
+CI=true npm test -- --watch=false --runInBand
+npm run build
+```
+
+The application is deployed to Vercel from the repository's production branch.
+
+## API configuration
+
+API URLs are centralized in `src/utils/globals.ts`:
+
+| Environment | Backend URL |
+| --- | --- |
+| Local development | `http://<browser-hostname>:8080` |
+| Production | `https://url.runmydocker-app.com` |
+
+The frontend uses these API routes:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/user?name={username}` | Create user |
+| `GET` | `/user?name={username}` | Load user details |
+| `POST` | `/tiny` | Create shortened URL |
+| `GET` | `/user/clicks?name={username}` | Load click history |
+| `GET` | `/actuator/health` | Check backend readiness |
+
+Usernames are URL-encoded when used in query parameters.
 
 ## Screenshots
+
+*Screenshots below are from an earlier version of the interface and are kept as project references. The live UI may have minor differences.*
 
 ### Homepage
 
@@ -58,87 +127,13 @@ A full-stack URL shortening application built with Spring Boot and React. The pr
 
 ![Click details](https://github.com/user-attachments/assets/808bbdae-e858-4eeb-b320-75d86866bfd8)
 
-## Usage
+## Related resources
 
-1. Create a user.
-2. Submit a long URL to generate a shortened URL.
-3. Open the shortened URL to be redirected to the original destination.
-4. View user-level URL and click statistics.
-5. Inspect click history for individual shortened URLs.
+- [Live TinyURL demo](https://etinyurl.vercel.app/)
+- [TinyURL backend source](https://github.com/elad9219/tinyurl)
+- [Backend Swagger UI](https://url.runmydocker-app.com/swagger-ui/index.html)
 
-## Local Setup
+## Author
 
-### Prerequisites
-
-- Java 11
-- Maven
-- Node.js and npm
-- MongoDB
-- Redis
-- Cassandra
-- Docker (optional)
-- Git
-
-### Backend
-
-```bash
-git clone https://github.com/elad9219/tinyurl.git
-cd tinyurl
-```
-
-Create your local configuration from `src/main/resources/application.properties.example`, then replace the placeholders with your own MongoDB, Redis, and Cassandra/Astra DB values.
-
-```bash
-mvn clean install
-mvn spring-boot:run
-```
-
-> Never commit real database passwords, API keys, connection strings, or secure-connect credentials.
-
-### Frontend
-
-```bash
-git clone https://github.com/elad9219/tinyurl-frontend.git
-cd tinyurl-frontend
-npm install
-npm start
-```
-
-### Docker
-
-After configuring the required database connections:
-
-```bash
-docker build -t tinyurl-backend .
-docker run -p 8080:8080 tinyurl-backend
-```
-
-## Project Structure
-
-### Backend
-
-```text
-src/main/java/com/handson/tinyurl/
-├── config/
-├── controller/
-├── model/
-├── repository/
-├── service/
-└── util/
-```
-
-### Frontend
-
-```text
-src/
-├── components/
-├── utils/
-└── App.tsx
-```
-
-## Contact
-
-- **Elad Tennenboim**
-- **GitHub:** [elad9219](https://github.com/elad9219)
-- **LinkedIn:** [linkedin.com/in/elad-tennenboim](https://www.linkedin.com/in/elad-tennenboim/)
-- **Email:** elad9219@gmail.com
+**Elad Tennenboim**  
+[GitHub](https://github.com/elad9219) · [LinkedIn](https://www.linkedin.com/in/elad-tennenboim/) · [Email](mailto:elad9219@gmail.com)
